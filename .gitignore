@@ -1,0 +1,15 @@
+# Maven
+/target/
+
+# IntelliJ IDEA
+/.idea/
+*.iml
+
+# OS
+.DS_Store
+
+# Logs
+*.log
+
+# Build artifacts
+*.class
