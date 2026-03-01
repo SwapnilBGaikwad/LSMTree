@@ -2,6 +2,8 @@ package org.example;
 
 import org.example.store.SST;
 
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Map;
 import java.util.Objects;
 
@@ -14,6 +16,15 @@ public class HBaseDatabase<K extends Comparable<? super K>, V> implements Databa
 
     public HBaseDatabase(int maxKeysPerBlock) {
         this.sst = new SST<>(maxKeysPerBlock);
+    }
+
+    public HBaseDatabase(int maxKeysPerBlock, Path backupDirectory) {
+        this.sst = new SST<>(maxKeysPerBlock, backupDirectory);
+    }
+
+    public HBaseDatabase(HBaseConfig config) {
+        Objects.requireNonNull(config, "config cannot be null");
+        this.sst = new SST<>(config.getMaxKeyCount(), Paths.get(config.getDataDir()));
     }
 
     @Override

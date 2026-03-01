@@ -51,4 +51,8 @@ public class BlockStore<K extends Comparable<? super K>, V> {
     public boolean isFull() {
         return data.size() >= maxActiveKeyCount;
     }
+
+    public Map<K, V> snapshotSorted() {
+        return new TreeMap<>(data);
+    }
 }
