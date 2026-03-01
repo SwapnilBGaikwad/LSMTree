@@ -28,6 +28,7 @@ class HBaseDatabaseTest {
         for (int i = 0; i < totalKeys; i++) {
             database.put(generateKey("key-", i), generateValue(i));
         }
+        waitForBackupFileCount(2);
 
         // Limit is 10 by default, so 25 keys require 3 blocks.
         assertEquals(3, database.getBlockCount());

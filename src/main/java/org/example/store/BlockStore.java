@@ -40,6 +40,15 @@ public class BlockStore<K extends Comparable<? super K>, V> {
 
     public synchronized V get(K key) {
         Objects.requireNonNull(key, "key cannot be null");
+        if (state == State.PERSISTED && persistedFile != null) {
+            FilePointer pointer = index.get(String.valueOf(key));
+            if (pointer == null) {
+                return null;
+            }
+            @SuppressWarnings("unchecked")
+            V value = (V) FileUtils.readValue(persistedFile, pointer);
+            return value;
+        }
         return data.get(key);
     }
 
@@ -51,6 +60,20 @@ public class BlockStore<K extends Comparable<? super K>, V> {
     public synchronized Map<K, V> scan(String prefix) {
         String effectivePrefix = prefix == null ? "" : prefix;
         Map<K, V> result = new TreeMap<>();
+        if (state == State.PERSISTED && persistedFile != null) {
+            for (Map.Entry<String, FilePointer> entry : index.entrySet()) {
+                if (!entry.getKey().startsWith(effectivePrefix)) {
+                    continue;
+                }
+                @SuppressWarnings("unchecked")
+                K key = (K) entry.getKey();
+                @SuppressWarnings("unchecked")
+                V value = (V) FileUtils.readValue(persistedFile, entry.getValue());
+                result.put(key, value);
+            }
+            return result;
+        }
+
         for (Map.Entry<K, V> entry : data.entrySet()) {
             if (String.valueOf(entry.getKey()).startsWith(effectivePrefix)) {
                 result.put(entry.getKey(), entry.getValue());
@@ -93,20 +116,5 @@ public class BlockStore<K extends Comparable<? super K>, V> {
 
     public synchronized Path getPersistedFile() {
         return persistedFile;
-    }
-
-    public synchronized FilePointer getFilePointer(K key) {
-        return index.get(String.valueOf(key));
-    }
-
-    public synchronized Map<String, FilePointer> scanFilePointers(String prefix) {
-        String effectivePrefix = prefix == null ? "" : prefix;
-        Map<String, FilePointer> result = new TreeMap<>();
-        for (Map.Entry<String, FilePointer> entry : index.entrySet()) {
-            if (entry.getKey().startsWith(effectivePrefix)) {
-                result.put(entry.getKey(), entry.getValue());
-            }
-        }
-        return result;
     }
 }

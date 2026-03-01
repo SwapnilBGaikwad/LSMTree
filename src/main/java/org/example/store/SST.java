@@ -55,15 +55,7 @@ public class SST<K extends Comparable<? super K>, V> implements Database<K, V> {
         Objects.requireNonNull(key, "key cannot be null");
         for (BlockStore<K, V> blockStore : blockStores) {
             if (blockStore.containsKey(key)) {
-                V inMemory = blockStore.get(key);
-                if (inMemory != null) {
-                    return inMemory;
-                }
-                FilePointer pointer = blockStore.getFilePointer(key);
-                if (pointer != null && blockStore.getPersistedFile() != null) {
-                    return readPersistedValue(blockStore.getPersistedFile(), pointer);
-                }
-                return null;
+                return blockStore.get(key);
             }
         }
         return null;
@@ -76,17 +68,6 @@ public class SST<K extends Comparable<? super K>, V> implements Database<K, V> {
             Map<K, V> current = blockStore.scan(prefix);
             for (Map.Entry<K, V> entry : current.entrySet()) {
                 merged.putIfAbsent(entry.getKey(), entry.getValue());
-            }
-
-            Map<String, FilePointer> pointers = blockStore.scanFilePointers(prefix);
-            Path file = blockStore.getPersistedFile();
-            if (file == null) {
-                continue;
-            }
-            for (Map.Entry<String, FilePointer> entry : pointers.entrySet()) {
-                @SuppressWarnings("unchecked")
-                K key = (K) entry.getKey();
-                merged.putIfAbsent(key, readPersistedValue(file, entry.getValue()));
             }
         }
         return merged;
@@ -119,10 +100,5 @@ public class SST<K extends Comparable<? super K>, V> implements Database<K, V> {
             return blockStore;
         }
         return blockStores.get(0);
-    }
-
-    @SuppressWarnings("unchecked")
-    private V readPersistedValue(Path file, FilePointer pointer) {
-        return (V) FileUtils.readValue(file, pointer);
     }
 }

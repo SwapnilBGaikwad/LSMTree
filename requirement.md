@@ -31,3 +31,6 @@ This class will be named as BackupStore taking BlockStore and onca back is compl
 And replace full map with indexMap and if isBackedUp = we empty the original map to reduce memmory and use fileIndex with Map<String, FilePointer> as given.
 
 Backup process is completely async and will not impact ongoing read / write.
+
+
+Version 0.4
