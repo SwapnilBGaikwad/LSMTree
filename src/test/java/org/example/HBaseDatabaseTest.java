@@ -121,6 +121,25 @@ class HBaseDatabaseTest {
         assertEquals("block-000002.sst", fileNames.get(1));
     }
 
+    @Test
+    void shouldNotPersistTombstoneEntriesInBackupFile() throws IOException {
+        HBaseDatabase<String, String> database = createDatabase();
+
+        for (int i = 0; i < 9; i++) {
+            database.put(generateKey("live-", i), generateValue(i));
+        }
+        database.delete("key-should-not-persist");
+        database.put("trigger-rollover", "v");
+        waitForBackupFileCount(1);
+
+        Path backupFile = tempDir.resolve("block-000001.sst");
+        List<String> lines = Files.readAllLines(backupFile);
+
+        assertEquals(9, lines.size());
+        boolean tombstonePresent = lines.stream().anyMatch(line -> line.startsWith("key-should-not-persist=>"));
+        assertEquals(false, tombstonePresent);
+    }
+
     private static String generateKey(String prefix, int index) {
         return prefix + String.format("%03d", index);
     }

@@ -5,9 +5,11 @@ import org.example.Database;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.TreeMap;
 
 public class SST<K extends Comparable<? super K>, V> implements Database<K, V> {
@@ -64,9 +66,14 @@ public class SST<K extends Comparable<? super K>, V> implements Database<K, V> {
     @Override
     public Map<K, V> scan(String prefix) {
         Map<K, V> merged = new TreeMap<>();
+        Set<String> blockedByTombstone = new HashSet<>();
         for (BlockStore<K, V> blockStore : blockStores) {
+            blockedByTombstone.addAll(blockStore.tombstonesByPrefix(prefix));
             Map<K, V> current = blockStore.scan(prefix);
             for (Map.Entry<K, V> entry : current.entrySet()) {
+                if (blockedByTombstone.contains(String.valueOf(entry.getKey()))) {
+                    continue;
+                }
                 merged.putIfAbsent(entry.getKey(), entry.getValue());
             }
         }
@@ -76,9 +83,13 @@ public class SST<K extends Comparable<? super K>, V> implements Database<K, V> {
     @Override
     public void delete(K key) {
         Objects.requireNonNull(key, "key cannot be null");
-        for (BlockStore<K, V> blockStore : blockStores) {
-            blockStore.delete(key);
+        BlockStore<K, V> latest = getLatestBlock();
+        if (latest.isFull() && !latest.containsKey(key)) {
+            backupManager.submit(latest);
+            latest = new BlockStore<>(maxKeysPerBlock);
+            blockStores.add(0, latest);
         }
+        latest.markDeleted(key);
     }
 
     public boolean isActiveBlockFull() {
