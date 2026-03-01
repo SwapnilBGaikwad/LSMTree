@@ -40,6 +40,7 @@ class HBaseDatabaseTest {
         for (int i = 0; i < 25; i++) {
             database.put(generateKey("key-", i), generateValue(i));
         }
+        waitForBackupFileCount(2);
 
         assertEquals(generateValue(0), database.get(generateKey("key-", 0)));
         assertEquals(generateValue(24), database.get(generateKey("key-", 24)));
@@ -56,6 +57,7 @@ class HBaseDatabaseTest {
         for (int i = 0; i < 5; i++) {
             database.put(generateKey("user-", i), generateValue(100 + i));
         }
+        waitForBackupFileCount(2);
 
         Map<String, String> scanResult = database.scan("acct-");
         List<String> keys = new ArrayList<>(scanResult.keySet());
@@ -89,6 +91,7 @@ class HBaseDatabaseTest {
         for (int i = 0; i < 11; i++) {
             database.put(generateKey("bk-", i), generateValue(i));
         }
+        waitForBackupFileCount(1);
 
         Path backupFile = tempDir.resolve("block-000001.sst");
         List<String> lines = Files.readAllLines(backupFile);
@@ -105,6 +108,7 @@ class HBaseDatabaseTest {
         for (int i = 0; i < 25; i++) {
             database.put(generateKey("multi-", i), generateValue(i));
         }
+        waitForBackupFileCount(2);
 
         List<String> fileNames = Files.list(tempDir)
                 .map(path -> path.getFileName().toString())
@@ -127,5 +131,31 @@ class HBaseDatabaseTest {
     private HBaseDatabase<String, String> createDatabase() {
         HBaseConfig config = new HBaseConfig(tempDir.toString(), MAX_KEYS);
         return new HBaseDatabase<>(config);
+    }
+
+    private void waitForBackupFileCount(int expectedCount) {
+        long timeoutMillis = 2000L;
+        long start = System.currentTimeMillis();
+        while (System.currentTimeMillis() - start < timeoutMillis) {
+            try (var stream = Files.list(tempDir)) {
+                long count = stream.count();
+                if (count >= expectedCount) {
+                    return;
+                }
+            } catch (IOException ignored) {
+                // no-op
+            }
+            sleepQuietly(25L);
+        }
+        throw new AssertionError("Timed out waiting for backup files. expected=" + expectedCount);
+    }
+
+    private void sleepQuietly(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("Interrupted while waiting for backup completion", e);
+        }
     }
 }

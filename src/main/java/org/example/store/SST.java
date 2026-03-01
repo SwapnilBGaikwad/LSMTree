@@ -5,7 +5,6 @@ import org.example.Database;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -16,9 +15,8 @@ public class SST<K extends Comparable<? super K>, V> implements Database<K, V> {
     private static final Path DEFAULT_BACKUP_DIRECTORY = Paths.get("backup");
 
     private final int maxKeysPerBlock;
-    private final Path backupDirectory;
+    private final BackupManager backupManager;
     private final List<BlockStore<K, V>> blockStores;
-    private int backupSequence;
 
     public SST() {
         this(DEFAULT_MAX_KEYS_PER_BLOCK, DEFAULT_BACKUP_DIRECTORY);
@@ -34,9 +32,8 @@ public class SST<K extends Comparable<? super K>, V> implements Database<K, V> {
         }
         Objects.requireNonNull(backupDirectory, "backupDirectory cannot be null");
         this.maxKeysPerBlock = maxKeysPerBlock;
-        this.backupDirectory = FileUtils.ensureDirectory(backupDirectory);
+        this.backupManager = new BackupManager(backupDirectory);
         this.blockStores = new ArrayList<>();
-        this.backupSequence = 0;
         // Sentinel block to ensure there is always an active writable block.
         this.blockStores.add(new BlockStore<>(maxKeysPerBlock));
     }
@@ -46,7 +43,7 @@ public class SST<K extends Comparable<? super K>, V> implements Database<K, V> {
         Objects.requireNonNull(key, "key cannot be null");
         BlockStore<K, V> latest = getLatestBlock();
         if (latest.isFull() && !latest.containsKey(key)) {
-            persistBlock(latest);
+            backupManager.submit(latest);
             latest = new BlockStore<>(maxKeysPerBlock);
             blockStores.add(0, latest);
         }
@@ -58,7 +55,15 @@ public class SST<K extends Comparable<? super K>, V> implements Database<K, V> {
         Objects.requireNonNull(key, "key cannot be null");
         for (BlockStore<K, V> blockStore : blockStores) {
             if (blockStore.containsKey(key)) {
-                return blockStore.get(key);
+                V inMemory = blockStore.get(key);
+                if (inMemory != null) {
+                    return inMemory;
+                }
+                FilePointer pointer = blockStore.getFilePointer(key);
+                if (pointer != null && blockStore.getPersistedFile() != null) {
+                    return readPersistedValue(blockStore.getPersistedFile(), pointer);
+                }
+                return null;
             }
         }
         return null;
@@ -71,6 +76,17 @@ public class SST<K extends Comparable<? super K>, V> implements Database<K, V> {
             Map<K, V> current = blockStore.scan(prefix);
             for (Map.Entry<K, V> entry : current.entrySet()) {
                 merged.putIfAbsent(entry.getKey(), entry.getValue());
+            }
+
+            Map<String, FilePointer> pointers = blockStore.scanFilePointers(prefix);
+            Path file = blockStore.getPersistedFile();
+            if (file == null) {
+                continue;
+            }
+            for (Map.Entry<String, FilePointer> entry : pointers.entrySet()) {
+                @SuppressWarnings("unchecked")
+                K key = (K) entry.getKey();
+                merged.putIfAbsent(key, readPersistedValue(file, entry.getValue()));
             }
         }
         return merged;
@@ -93,7 +109,7 @@ public class SST<K extends Comparable<? super K>, V> implements Database<K, V> {
     }
 
     public Path getBackupDirectory() {
-        return backupDirectory;
+        return backupManager.getBackupDirectory();
     }
 
     private BlockStore<K, V> getLatestBlock() {
@@ -105,15 +121,8 @@ public class SST<K extends Comparable<? super K>, V> implements Database<K, V> {
         return blockStores.get(0);
     }
 
-    private void persistBlock(BlockStore<K, V> blockStore) {
-        Map<K, V> sortedSnapshot = blockStore.snapshotSorted();
-        Map<String, String> persistable = new LinkedHashMap<>();
-
-        for (Map.Entry<K, V> entry : sortedSnapshot.entrySet()) {
-            persistable.put(String.valueOf(entry.getKey()), String.valueOf(entry.getValue()));
-        }
-
-        backupSequence++;
-        FileUtils.writeBlockBackup(backupDirectory, backupSequence, persistable);
+    @SuppressWarnings("unchecked")
+    private V readPersistedValue(Path file, FilePointer pointer) {
+        return (V) FileUtils.readValue(file, pointer);
     }
 }
